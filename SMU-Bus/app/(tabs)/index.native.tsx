@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Bus, Users, Clock, Video, RefreshCw, MapPin } from 'lucide-react-native';
+import MapView, { Marker, Polyline } from 'react-native-maps';
+import { Bus, Users, Clock, Video, RefreshCw } from 'lucide-react-native';
+import { WebView } from 'react-native-webview';
 
 import { AppColors, Spacing, BorderRadius, FontFamily, FontSizes, Shadow } from '@/constants/Colors';
 import { BusLocation, BusStop } from '@/types';
 import { BUS_STOPS, MOCK_BUSES } from '@/constants/mockData';
 import { getCapacityColor, getCapacityText, getRouteColor } from '@/utils/busUtils';
-import { BottomSheet } from '@/components/BottomSheet.web';
+import { BottomSheet } from '@/components/BottomSheet';
 
 const { width, height } = Dimensions.get('window');
 
@@ -22,9 +24,9 @@ export default function LiveTrackingScreen() {
   // 바텀 시트 snap points (화면 높이 기준 상대값)
   const snapPoints = useMemo(() => [
     // 숫자가 높아질수록 차지 비율이 적음
-    height * 0.84,  // 거의 전체 화면
+    height * 0.84,  // 맨 밑에 위치
     height * 0.58,  // 중간 위치
-    height * 0.34,  // 최소 높이
+    height * 0.34,  // 맨 위에 위치
   ], []);
 
   const updateBusPositions = useCallback(() => {
@@ -44,6 +46,7 @@ export default function LiveTrackingScreen() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
+    // API 호출 시뮬레이션
     setTimeout(() => {
       setRefreshing(false);
     }, 1000);
@@ -66,43 +69,72 @@ export default function LiveTrackingScreen() {
   // 새로고침 버튼이 현재 바텀시트 위치를 따라 움직임
   const refreshButtonBottom = useMemo(() => {
     const currentSnapPoint = snapPoints[currentSnapIndex];
-    return height + currentSnapPoint - 70;
+    return height - currentSnapPoint - 70;
   }, [currentSnapIndex, snapPoints]);
 
   return (
     <View style={styles.container}>
       <View style={[styles.mapContainer, { marginTop: -insets.top, height: height + insets.top }]}>
-        <View style={styles.webMapPlaceholder}>
-          <MapPin size={48} color="#6b7280" />
-          <Text style={styles.webMapText}>캠퍼스 지도</Text>
-          <Text style={styles.webMapSubtext}>웹에서는 지도 기능이 제한됩니다</Text>
+        <MapView
+          style={styles.map}
+          initialRegion={{
+            latitude: 37.5665,
+            longitude: 126.9780,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          }}>
           
-          {/* 정류장 목록 */}
-          <View style={styles.stopsContainer}>
-            <Text style={styles.stopsTitle}>버스 정류장</Text>
-            {stopsList.map(stop => (
-              <View key={stop.id} style={styles.stopItem}>
-                <View style={styles.stopMarker}>
-                  <Bus size={16} color={AppColors.text.primary} />
-                </View>
-                <View style={styles.stopInfo}>
-                  <Text style={styles.stopName}>{stop.name}</Text>
-                  <Text style={styles.stopRoutes}>{stop.routes.join(', ')}</Text>
-                </View>
+          {/* 버스 정류장 마커 */}
+          {stopsList.map(stop => (
+            <Marker
+              key={stop.id}
+              coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
+              title={stop.name}
+              description={`노선: ${stop.routes.join(', ')}`}>
+              <View style={styles.stopMarker}>
+                <Bus size={16} color={AppColors.text.primary} />
               </View>
-            ))}
-          </View>
-        </View>
+            </Marker>
+          ))}
 
+          {/* 버스 마커 */}
+          {buses.map(bus => (
+            <Marker
+              key={bus.id}
+              coordinate={{ latitude: bus.latitude, longitude: bus.longitude }}
+              title={bus.routeName}
+              description={`다음 정류장: ${bus.nextStop} (${bus.eta}분)`}
+              onPress={() => setSelectedBus(bus)}>
+              <View style={[styles.busMarker, { 
+                backgroundColor: bus.routeName === 'A노선' ? '#3b82f6' : '#10b981' 
+              }]}>
+                <Bus size={20} color="#ffffff" />
+              </View>
+            </Marker>
+          ))}
+        </MapView>
 
+        {/* 새로고침 버튼 */}
         <TouchableOpacity 
-          style={[styles.cctvButton, { top: Spacing.xl * 3 + insets.top }]}
+          style={[styles.mapRefreshButton, { bottom: refreshButtonBottom }]}
+          onPress={handleRefresh}>
+          <RefreshCw 
+            size={20} 
+            color="#ffffff" 
+            style={refreshing ? styles.spinning : {}} />
+        </TouchableOpacity>
+
+
+        {/* CCTV 토글 버튼 */}
+        <TouchableOpacity 
+          style={[styles.cctvButton, { top: Spacing.xl * 2.5 + insets.top }]}
           onPress={toggleCCTV}>
           <Video size={20} color="#ffffff" />
           <Text style={styles.cctvButtonText}>CCTV</Text>
         </TouchableOpacity>
       </View>
 
+      {/* CCTV 피드 */}
       {showCCTV && (
         <View style={[styles.cctvContainer, { top: Spacing.xl * 4 + insets.top }]}>
           <View style={styles.cctvHeader}>
@@ -111,29 +143,20 @@ export default function LiveTrackingScreen() {
               <Text style={styles.closeButton}>×</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.cctvPlaceholder}>
-            <Video size={48} color="#6b7280" />
-            <Text style={styles.cctvPlaceholderText}>CCTV 피드</Text>
-            <Text style={styles.cctvPlaceholderSubtext}>웹에서는 CCTV 기능이 제한됩니다</Text>
-          </View>
+          <WebView
+            style={styles.cctvFeed}
+            source={{ uri: 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&mute=1' }}
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+          />
         </View>
       )}
 
+      {/* 버스 정보 패널 */}
       <BottomSheet 
         snapPoints={snapPoints}
         initialSnapIndex={1}
         onSnapPointChange={handleSheetChange}>
-        <View style={styles.refreshButtonContainer}>
-          <TouchableOpacity 
-            style={styles.floatingRefreshButton}
-            onPress={handleRefresh}>
-            <Text style={{color: 'white', fontSize: 12}}>{currentSnapIndex}</Text>
-            <RefreshCw 
-              size={20} 
-              color="#ffffff" 
-              style={refreshing ? styles.spinning : {}} />
-          </TouchableOpacity>
-        </View>
         <ScrollView style={styles.busInfoContainer}>
           <Text style={styles.sectionTitle}>운행 중인 버스</Text>
           {buses.map(bus => (
@@ -189,47 +212,8 @@ const styles = StyleSheet.create({
     position: 'relative',
     flex: 1,
   },
-  webMapPlaceholder: {
+  map: {
     flex: 1,
-    backgroundColor: AppColors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: Spacing.xl,
-  },
-  webMapText: {
-    fontSize: FontSizes.xl,
-    fontFamily: FontFamily.semiBold,
-    color: AppColors.text.secondary,
-    marginTop: Spacing.md,
-  },
-  webMapSubtext: {
-    fontSize: FontSizes.md,
-    fontFamily: FontFamily.regular,
-    color: AppColors.text.tertiary,
-    textAlign: 'center',
-    marginTop: Spacing.xs,
-    marginBottom: Spacing.xl,
-  },
-  stopsContainer: {
-    backgroundColor: AppColors.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.lg,
-    width: '100%',
-    maxWidth: 400,
-    ...Shadow.md,
-  },
-  stopsTitle: {
-    fontSize: FontSizes.lg,
-    fontFamily: FontFamily.semiBold,
-    color: AppColors.text.primary,
-    marginBottom: Spacing.md,
-  },
-  stopItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: AppColors.border,
   },
   stopMarker: {
     backgroundColor: AppColors.surface,
@@ -237,21 +221,12 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.xl,
     borderWidth: 2,
     borderColor: AppColors.text.primary,
-    marginRight: Spacing.md,
+    ...Shadow.lg,
   },
-  stopInfo: {
-    flex: 1,
-  },
-  stopName: {
-    fontSize: FontSizes.md,
-    fontFamily: FontFamily.semiBold,
-    color: AppColors.text.primary,
-  },
-  stopRoutes: {
-    fontSize: FontSizes.sm,
-    fontFamily: FontFamily.regular,
-    color: AppColors.text.secondary,
-    marginTop: 2,
+  busMarker: {
+    padding: 10,
+    borderRadius: BorderRadius.full,
+    ...Shadow.lg,
   },
   mapRefreshButton: {
     position: 'absolute',
@@ -305,26 +280,10 @@ const styles = StyleSheet.create({
     color: AppColors.text.secondary,
     fontWeight: 'bold',
   },
-  cctvPlaceholder: {
+  cctvFeed: {
     height: 200,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: AppColors.border,
     borderBottomLeftRadius: BorderRadius.md,
     borderBottomRightRadius: BorderRadius.md,
-  },
-  cctvPlaceholderText: {
-    fontSize: FontSizes.lg,
-    fontFamily: FontFamily.semiBold,
-    color: AppColors.text.secondary,
-    marginTop: Spacing.md,
-  },
-  cctvPlaceholderSubtext: {
-    fontSize: FontSizes.sm,
-    fontFamily: FontFamily.regular,
-    color: AppColors.text.tertiary,
-    textAlign: 'center',
-    marginTop: Spacing.xs,
   },
   busInfoContainer: {
     paddingHorizontal: Spacing.xl,
@@ -389,17 +348,5 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.md,
     fontFamily: FontFamily.regular,
     color: AppColors.text.secondary,
-  },
-  refreshButtonContainer: {
-    position: 'absolute',
-    top: -10,
-    right: Spacing.xl,
-    zIndex: 10,
-  },
-  floatingRefreshButton: {
-    backgroundColor: AppColors.primary,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.full,
-    ...Shadow.lg,
   },
 });
