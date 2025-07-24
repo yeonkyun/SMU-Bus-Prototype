@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Bus, MapPin, Bell, User } from 'lucide-react-native';
+import { Bus, MapPin, Bell, MoreHorizontal } from 'lucide-react-native';
 import { View, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState } from 'react';
@@ -85,11 +85,11 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="profile"
+          name="more"
           options={{
-            title: '프로필',
+            title: '더보기',
             tabBarIcon: ({ size, color }) => (
-              <User size={size} color={color} />
+              <MoreHorizontal size={size} color={color} />
             ),
           }}
         />
